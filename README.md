@@ -1,52 +1,49 @@
-# gold_bot
+# Gold Bot v2 — XAU/USD tahlil va signal
 
-Gold Bot — simulyatsiya prototipi
+Faqat tahlil: brokerga ulanmaydi, buyurtma yubormaydi. Python 3.10+, qo'shimcha kutubxona shart emas
+(faqat `fetch` buyrug'i uchun `pip install yfinance`).
 
-Bu o‘quv loyihasi XAU/USD uchun oddiy moving-average crossover strategiyasini
-tarixiy OHLC CSV ma’lumotida simulyatsiya qiladi.
+## Tez boshlash
+```bash
+# 1) Real ma'lumot (tavsiya: MT5 dan eksport qilingan CSV, kamida 1-2 yillik soatlik)
+python -m goldbot fetch --out data/gold_1h.csv          # yoki MT5 CSV ni data/ ga qo'ying
 
-Xavfsizlik
+# 2) Strategiya haqiqatan ishlaydimi? (eng muhim qadam)
+python -m goldbot walkforward data/gold_1h.csv
 
-• Brokerga ulanmaydi.
-• MetaTrader 5 ga ulanmaydi.
-• Buyurtma yuborish funksiyasi yo‘q.
-• sample_gold.csv sun’iy (synthetic) ma’lumot; real bozor narxlari emas.
-• Natijalar foyda kafolati emas va real savdo qarori uchun ishlatilmasligi kerak.
+# 3) Hozirgi signal
+python -m goldbot signal data/gold_1h.csv --balance 5000
+```
+Boshqa buyruqlar: `backtest` (butun davr, `--trades savdolar.csv`), `demo-data` (SUN'IY ma'lumot, faqat kodni sinash uchun).
+Parametrlarni o'zgartirish: `--set adx_min=25 --set risk_pct=0.5` (hamma parametrlar `goldbot/strategy.py` → `Params`).
+Telegramga yuborish: `TELEGRAM_BOT_TOKEN` va `TELEGRAM_CHAT_ID` ni o'rnatib, `signal ... --telegram` (jonli sinalmagan).
 
-Fayllar
+## CSV formati
+`time,open,high,low,close` (ISO vaqt) yoki MT5 eksporti (`<DATE> <TIME> <OPEN>...`, TAB). Vaqt UTC deb olinadi
+(MT5 server vaqti UTC bo'lmasa sessiya filtri siljiydi — `--set use_session=0` bilan o'chiring).
 
-• main.py — strategiya va backtest simulyatori (Python standard library).
-• data/sample_gold.csv — sinov uchun sun’iy OHLC ma’lumot.
+## Strategiya (ball tizimi, max 8)
+Majburiy: katta trend (narx va EMA50 EMA200 ning bir tomonida), kirish triggeri (EMA20/50 kesishuvi yoki
+EMA20 ga pullback), yetarli volatillik, faol sessiya (UTC 7–20). Qo'shimcha ball: EMA tartibi, ADX,
+RSI zonasi, candle tasdig'i. Signal uchun ≥6 ball. Stop 1.5×ATR, target 2R, +1R da breakeven, 48 candle
+vaqt chegarasi, kunlik zarar limiti 3%, kuniga ≤3 savdo.
 
-Ishga tushirish
+## v1 dagi kamchiliklar va tuzatishlar
+| v1 | v2 |
+|---|---|
+| Faqat backtest, signal yo'q | `signal` buyrug'i: BUY/SELL/WAIT, entry, SL, TP, lot, sabablar |
+| Sun'iy 360 candle, 5 savdo | Real ma'lumot yuklash, MT5 formati, statistik baho (bootstrap) |
+| Risk limiti amalda ishlamasdi (hajm balansga cheklangan) | Risk % bo'yicha hajm + leverage chegarasi + lot qadami |
+| Gap hisobga olinmagan | Gap bo'lsa chiqish ochilish narxida (yo'qotish kattaroq) |
+| O(n²) sekin | Indikatorlar bir marta hisoblanadi (8000 candle < 1 s) |
+| Faqat SMA crossover | Trend filtri, ADX, RSI, volatillik, sessiya, breakeven, vaqt chegarasi |
+| Spread faqat qo'shib-ayirilgan | Kirish va chiqish narxi noqulay tomonga siljiydi + komissiya |
+| In-sample natija | Walk-forward: parametr o'tmishda tanlanadi, ko'rilmagan davrda sinaladi |
+| Test yo'q | `python -m unittest discover -s tests` (look-ahead yo'qligi, gap, risk, indikatorlar) |
 
-Python 3.10+ kerak. Qo‘shimcha kutubxona o‘rnatish shart emas.
-
-Terminalda loyiha papkasiga kirib:
-
-python main.py
-
-O‘zingizdagi CSV faylni sinash:
-
-python main.py data/my_gold_data.csv
-
-CSV ustunlari:
-time,open,high,low,close
-Vaqt ISO formatida bo‘lsin, masalan 2026-01-01T09:00:00.
-
-Strategiya qoidalari
-
-• 20 SMA va 50 SMA crossover.
-• Signal candle yopilganda aniqlanadi; kirish keyingi candle ochilishida simulyatsiya qilinadi.
-• Stop: 1.5 × ATR(14); target: 2R.
-• Har savdo uchun taxminiy risk limiti: $50.
-• Kunlik zarar chegarasi: $150. Bu prototipda kunlik limit yopilgan savdolar bo‘yicha hisoblanadi.
-• Agar bir candle ichida stop va target ikkalasi ham tegsa, konservativ ravishda stop birinchi deb olinadi.
-• Spread/slippage xarajati namunaviy qiymat; brokerga xos emas.
-
-Muhim cheklovlar
-
-Bu juda sodda prototip. Pozitsiya hajmi uchun 1 unit = 1 ounce deb faraz qilinadi;
-brokerning contract size, tick value, margin, spread va execution qoidalari farq qiladi.
-Kunlik limit ham gap, sirpanish yoki uzluksiz narx o‘zgarishi sabab real bozorda kafolatlanmaydi.
-Avval haqiqiy tarixiy ma’lumot, to‘g‘ri xarajatlar va mustaqil testlar bilan tekshirish kerak.
+## Muhim
+- Hech bir strategiya foyda kafolatlamaydi. `walkforward` natijasi "USTUNLIK TOPILMADI" yoki
+  "YETARLI EMAS" desa — strategiya bilan savdo qilmang.
+- "UMIDLI" baho ham faqat o'tmish haqida; avval demo hisobda kamida bir necha hafta kuzating.
+- Yangiliklar (NFP, FOMC, CPI) paytida signal bermaslik tavsiya etiladi — bot yangilikni bilmaydi.
+- Signal ma'lumot fayli qanchalik yangi bo'lsa, shunchalik foydali (eskirgan bo'lsa ogohlantiradi).
