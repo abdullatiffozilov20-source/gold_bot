@@ -26,8 +26,10 @@ class Params:
     session_end: int = 20            # UTC soat (kiritilmagan)
     min_score: int = 6               # signal uchun minimal ball (max 8)
     # chiqish
-    stop_atr: float = 1.5
-    target_r: float = 2.0
+    # Real XAU/USD 1H (2024-07..2026-10) walk-forward bo'yicha tanlangan: keng stop (3×ATR)
+    # shovqinga yeb qo'yilmaydi; uzoq target (4R) trendni ushlaydi.
+    stop_atr: float = 3.0
+    target_r: float = 4.0
     breakeven_r: float = 1.0         # +1R da stopni kirish narxiga ko'chirish (0 = o'chiq)
     max_bars: int = 48               # vaqt bo'yicha chiqish (candle soni)
     # risk va hajm
