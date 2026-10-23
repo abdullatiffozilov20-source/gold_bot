@@ -10,11 +10,11 @@ import os
 import sys
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import __version__
 from .backtest import run_backtest, summarize, walk_forward
-from .data import fetch_yfinance, load_candles, make_demo, save_candles
+from .data import drop_forming, fetch_yfinance, load_candles, make_demo, save_candles
 from .strategy import Indicators, Params, evaluate, levels
 from .backtest import position_size
 
@@ -120,6 +120,16 @@ def cmd_wf(a):
     print("\nBu raqam backtest'dan past bo'lishi NORMAL — u haqiqatga yaqinroq.\n" + DISCLAIMER)
 
 
+def _stat_line(trades):
+    n = len(trades)
+    if not n:
+        return "savdo yo'q"
+    gp = sum(t["net_pnl"] for t in trades if t["net_pnl"] > 0)
+    gl = -sum(t["net_pnl"] for t in trades if t["net_pnl"] <= 0)
+    pf = gp / gl if gl else float("inf")
+    return f"{n} savdo, PF {_fmt_pf(pf)}, o'rtacha {sum(t['r'] for t in trades) / n:+.2f}R"
+
+
 def build_signal_text(candles, p, balance, quick_stats=True):
     ind = Indicators(candles, p)
     i = ind.n - 1
@@ -163,9 +173,23 @@ def build_signal_text(candles, p, balance, quick_stats=True):
     if quick_stats and len(candles) > ind.warmup + 500:
         res = run_backtest(candles, p, ind)
         sm = summarize(res, p, boot=0)
-        out.append(f"\nBu faylda strategiya tarixi: {sm['n']} savdo, yutuq {sm['win_rate']:.0f}%, "
+        out.append(f"\nTarix (parametrlar shu davrda tanlangan, shuning uchun biroz optimistik; "
+                   f"halol baho uchun `walkforward`): {sm['n']} savdo, yutuq {sm['win_rate']:.0f}%, "
                    f"PF {_fmt_pf(sm['pf'])}, o'rtacha {sm['avg_r']:+.2f}R")
-        out.append(f"Ishonch: {sm['verdict']}")
+        if sig.action in ("BUY", "SELL"):
+            side = [t for t in res["trades"] if t["side"] == sig.action]
+            if side:
+                out.append(f"  {sig.action} tomon tarixi: {_stat_line(side)}")
+        # So'nggi 90 kun: strategiya hozirgi bozorda ishlayaptimi?
+        cutoff = last - timedelta(days=90)
+        recent = [t for t in res["trades"] if t["entry_time"] >= cutoff]
+        out.append(f"  So'nggi 90 kun: {_stat_line(recent)}")
+        if len(recent) < 8:
+            out.append("  ⚠ So'nggi davrda savdo kam — joriy holat haqida xulosa chiqarish qiyin.")
+        elif sum(t["r"] for t in recent) <= 0:
+            out.append("  ⚠ So'nggi 90 kunda strategiya zarar qildi — bozor rejimi o'zgargan bo'lishi mumkin. "
+                       "Signalga ehtiyotkor munosabatda bo'ling (kichik risk yoki demo).")
+        out.append(f"Ishonch (butun tarix): {sm['verdict']}")
     out.append("\n" + DISCLAIMER)
     return "\n".join(out)
 
@@ -183,7 +207,14 @@ def send_telegram(text):
 
 def cmd_signal(a):
     p = _params(a)
+    if a.refresh:
+        fresh = fetch_yfinance("GC=F", "1h", 700)
+        save_candles(a.file, fresh)
+        print(f"Ma'lumot yangilandi: {a.file} ({len(fresh)} candle, oxirgi {fresh[-1].time} UTC)")
     candles = _load(a.file)
+    candles, dropped = drop_forming(candles)
+    if dropped:
+        print("Eslatma: oxirgi candle hali yopilmagan edi — signal oxirgi YOPILGAN candle bo'yicha.")
     ind = Indicators(candles, p)
     if len(candles) < ind.warmup + 5:
         raise SystemExit(f"Xatolik: kamida {ind.warmup + 5} ta candle kerak (EMA{p.trend} uchun).")
@@ -222,6 +253,7 @@ def main(argv=None):
     s = sub.add_parser("signal", help="Oxirgi candle bo'yicha BUY/SELL/WAIT")
     s.add_argument("file"); s.add_argument("--balance", type=float, default=5000.0)
     s.add_argument("--telegram", action="store_true"); s.add_argument("--fast", action="store_true", help="tarixiy statistikasiz")
+    s.add_argument("--refresh", action="store_true", help="avval Yahoo'dan yangi ma'lumot yuklab, keyin signal")
     common(s); s.set_defaults(fn=cmd_signal)
 
     a = ap.parse_args(argv)
