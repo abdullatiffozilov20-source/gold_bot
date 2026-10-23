@@ -102,6 +102,19 @@ def save_candles(path, candles):
                         f"{c.low:.2f}", f"{c.close:.2f}"])
 
 
+def drop_forming(candles, now=None):
+    """Hali yopilmagan (shakllanayotgan) oxirgi candle'ni olib tashlaydi.
+    Signal faqat YOPILGAN candle'ga tayanishi kerak (backtest ham shunday)."""
+    if len(candles) < 3:
+        return candles, False
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    deltas = sorted((b.time - a.time).total_seconds() for a, b in zip(candles[-50:], candles[-49:]))
+    bar = timedelta(seconds=deltas[len(deltas) // 2])
+    if candles[-1].time + bar > now:
+        return candles[:-1], True
+    return candles, False
+
+
 def fetch_yfinance(symbol="GC=F", interval="1h", days=700):
     """Yahoo Finance dan yuklaydi (pip install yfinance kerak, internet kerak).
     1h uchun Yahoo ~730 kun bilan cheklaydi. GC=F — oltin fyucherslari (spot XAUUSD dan
@@ -121,6 +134,7 @@ def fetch_yfinance(symbol="GC=F", interval="1h", days=700):
         if any(math.isnan(x) for x in (r["Open"], r["High"], r["Low"], r["Close"])):
             continue
         out.append(Candle(t, float(r["Open"]), float(r["High"]), float(r["Low"]), float(r["Close"])))
+    out, _ = drop_forming(out)          # shakllanayotgan oxirgi soatni saqlamaymiz
     return out
 
 
