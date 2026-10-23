@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from goldbot import indicators as ta
 from goldbot.backtest import position_size, run_backtest
-from goldbot.data import Candle, make_demo
+from goldbot.data import Candle, make_demo, drop_forming
 from goldbot.strategy import Indicators, Params, evaluate
 
 
@@ -77,7 +77,7 @@ class TestFills(unittest.TestCase):
         import goldbot.backtest as bt
         from goldbot.strategy import Signal
         candles = flat_then([(2000, 2000.5, 1999.5, 2000), bar] + ([bar2] if bar2 else []))
-        p = Params(use_session=False, spread=0.0, slippage=0.0, breakeven_r=0, max_bars=0,
+        p = Params(use_session=False, stop_atr=1.5, target_r=2.0, spread=0.0, slippage=0.0, breakeven_r=0, max_bars=0,
                    daily_loss_pct=100, risk_pct=1.0)
         ind = Indicators(candles, p)
         n_before = len(candles) - (3 if bar2 else 2)
@@ -110,6 +110,16 @@ class TestFills(unittest.TestCase):
         trades = self._force_trade(1, (2000, 2007, 1999, 2006))   # target = 2000+2*3 = 2006
         self.assertEqual(trades[0]["reason"], "target")
         self.assertAlmostEqual(trades[0]["r"], 2.0, places=3)
+
+
+class TestForming(unittest.TestCase):
+    def test_drops_unclosed_last_candle(self):
+        c = flat_then([], n_warm=60)
+        last = c[-1].time
+        kept, dropped = drop_forming(c, now=last + timedelta(minutes=30))   # oxirgi soat hali yopilmagan
+        self.assertTrue(dropped); self.assertEqual(len(kept), len(c) - 1)
+        kept, dropped = drop_forming(c, now=last + timedelta(hours=1, minutes=1))
+        self.assertFalse(dropped); self.assertEqual(len(kept), len(c))
 
 
 class TestBacktestSmoke(unittest.TestCase):
