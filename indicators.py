@@ -109,3 +109,4 @@ def adx(h, l, c, p):
             a = (a * (p - 1) + dxs[-1]) / p
             adx_v[i] = a
     return adx_v, pdi, mdi
+
